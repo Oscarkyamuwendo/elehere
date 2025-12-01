@@ -1,0 +1,20 @@
+# Environment
+.env
+venv/
+__pycache__/
+*.pyc
+
+# SQLite database
+*.db
+*.sqlite3
+
+# Uploads
+static/uploads/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

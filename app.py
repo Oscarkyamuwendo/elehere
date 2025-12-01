@@ -12,6 +12,11 @@ import urllib.parse as up
 
 import pymysql
 from flask_migrate import Migrate
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 pymysql.install_as_MySQLdb()
@@ -33,24 +38,27 @@ app.config.update(
 # Get the JawsDB URL from the environment variable
 url = os.environ.get('JAWSDB_URL')
 
+# Update this section in your app.py:
 if url:
     # Parse the URL
     result = up.urlparse(url)
-
-    # Configure the database connection using JawsDB credentials
     db_user = result.username
     db_password = result.password
     db_host = result.hostname
     db_name = result.path[1:]
-
-    # Update SQLAlchemy database URI for Heroku JawsDB
     app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_name}"
 else:
-    # Fallback to the local database URI if not found
-    import os
-    basedir = os.path.abspath(os.path.dirname(__file__))
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'elehere.db')
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # Check for Codespaces environment
+    if os.environ.get('CODESPACES') == 'true' or os.environ.get('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN'):
+        # Use SQLite in Codespaces for simplicity
+        basedir = os.path.abspath(os.path.dirname(__file__))
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'elehere.db')
+    else:
+        # Local development fallback
+        basedir = os.path.abspath(os.path.dirname(__file__))
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'elehere.db')
+    
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # Initialize SQLAlchemy
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
