@@ -2,13 +2,14 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    
     services:
       mysql:
         image: mysql:8.0
@@ -74,20 +75,25 @@ jobs:
             print('✅ Tables can be created')
         "
 
-deploy:
-  needs: test
-  if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-  runs-on: ubuntu-latest
-  environment: production
-
-  steps:
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
+    
+    - name: Setup Node.js for Railway CLI
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
     - name: Install Railway CLI
-      run: npm install -g @railway/cli[citation:7]
-
+      run: npm install -g @railway/cli
+    
     - name: Deploy to Railway
-      run: railway up[citation:1]
+      run: railway up
       env:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
