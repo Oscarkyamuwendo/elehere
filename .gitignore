@@ -1,20 +1,36 @@
-# Environment
-.env
-venv/
+cat > .gitignore << 'EOF'
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.env
 
-# SQLite database
-*.db
-*.sqlite3
-
-# Uploads
-static/uploads/
+# Docker
+.dockerignore
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Application specific
+uploads/
+instance/
+*.db
+*.sqlite3
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+EOF
