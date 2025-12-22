@@ -85,15 +85,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Setup Node.js for Railway CLI
-      uses: actions/setup-node@v4
+    - name: Setup Railway
+      uses: railwayapp/action@v1
       with:
-        node-version: '20'
-    
-    - name: Install Railway CLI
-      run: npm install -g @railway/cli
-    
-    - name: Deploy to Railway
-      run: railway up
-      env:
-        RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        railway_token: ${{ secrets.RAILWAY_TOKEN }}
+        service: web
