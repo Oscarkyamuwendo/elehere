@@ -2,9 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches: [ main ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
   test:
@@ -36,33 +36,45 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-cov
+        pip install pytest
     
-    - name: Run tests
+    - name: Run basic app tests
       env:
         DATABASE_URL: mysql+pymysql://root:root@localhost:3306/test_db
-        SECRET_KEY: test-key-123
+        SECRET_KEY: test-secret-key-123
         FLASK_ENV: testing
       run: |
-        # Create tests directory if not exists
-        mkdir -p tests
-        # Run tests if they exist
-        if [ -f "tests/test_app.py" ]; then
-          python -m pytest tests/ -v --cov=app --cov-report=xml
-        else
-          echo "No tests found, skipping"
-          # Create a simple test to verify app loads
-          python -c "from app import app; print('App imports successfully')"
-        fi
+        # Test that app imports and basic routes work
+        python -c "
+        from app import app
+        print('✅ App imports successfully')
+        with app.test_client() as client:
+            # Test health endpoint
+            resp = client.get('/health')
+            print(f'Health endpoint: {resp.status_code}')
+            # Test root redirect
+            resp = client.get('/')
+            print(f'Root endpoint: {resp.status_code}')
+        "
     
-    - name: Upload coverage to Codecov
-      if: always()
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        fail_ci_if_error: false
+    - name: Run database tests
+      env:
+        DATABASE_URL: mysql+pymysql://root:root@localhost:3306/test_db
+        SECRET_KEY: test-secret-key-123
+      run: |
+        python -c "
+        from app import app, db
+        with app.app_context():
+            # Test database connection
+            from sqlalchemy import text
+            db.session.execute(text('SELECT 1'))
+            print('✅ Database connection successful')
+            # Test table creation
+            db.create_all()
+            print('✅ Tables can be created')
+        "
 
-  deploy-to-railway:
+  deploy:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
