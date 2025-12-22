@@ -1,3 +1,4 @@
+from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
@@ -35,36 +36,63 @@ app.config.update(
 ) 
 
 
-# Get the JawsDB URL from the environment variable
-url = os.environ.get('JAWSDB_URL')
-
-# Update this section in your app.py:
-if url:
-    # Parse the URL
-    result = up.urlparse(url)
+# Database Configuration
+if os.environ.get('DATABASE_URL'):
+    # Use provided DATABASE_URL (for Railway, Heroku, etc.)
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+elif os.environ.get('JAWSDB_URL'):
+    # Parse JawsDB URL for Heroku
+    result = up.urlparse(os.environ.get('JAWSDB_URL'))
     db_user = result.username
     db_password = result.password
     db_host = result.hostname
     db_name = result.path[1:]
     app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_name}"
+elif os.environ.get('DOCKER_COMPOSE') == 'true' or os.environ.get('FLASK_ENV') == 'development':
+    # Docker Compose development
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://user:password@db:3306/elehere_db'
+elif os.environ.get('CODESPACES') == 'true':
+    # GitHub Codespaces - use SQLite
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'elehere.db')
 else:
-    # Check for Codespaces environment
-    if os.environ.get('CODESPACES') == 'true' or os.environ.get('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN'):
-        # Use SQLite in Codespaces for simplicity
-        basedir = os.path.abspath(os.path.dirname(__file__))
-        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'elehere.db')
-    else:
-        # Local development fallback
-        basedir = os.path.abspath(os.path.dirname(__file__))
-        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'elehere.db')
-    
+    # Local development fallback
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'elehere.db')
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+
 # Initialize SQLAlchemy
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
 # Secret key for session management
 app.secret_key = 'your_secret_key'
+
+
+# Health check endpoint for Docker/load balancers
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Docker/load balancers."""
+    try:
+        # Try database connection
+        db.session.execute('SELECT 1')
+        db_status = 'connected'
+    except:
+        db_status = 'disconnected'
+    
+    return {
+        'status': 'healthy',
+        'service': 'elehere',
+        'database': db_status,
+        'timestamp': datetime.now().isoformat()
+    }, 200
+
+@app.route('/ping')
+def ping():
+    """Simple ping endpoint."""
+    return 'pong', 200
 
 # Doctor model (to replace the MySQL table)
 class Doctor(db.Model):
@@ -75,8 +103,14 @@ class Doctor(db.Model):
     confirmed = db.Column(db.Boolean, default=False)
 
 # Creates the MySQL database tables (if they don't exist)
-with app.app_context():
-    db.create_all()
+# Only create tables if we're not using migrations or in development
+if os.environ.get('FLASK_ENV') == 'development' and not os.environ.get('USE_MIGRATIONS'):
+    with app.app_context():
+        try:
+            db.create_all()
+            print("✅ Database tables created/checked")
+        except Exception as e:
+            print(f"⚠ Could not create tables: {e}")
 
 # Route for the home page
 @app.route('/')
@@ -394,7 +428,7 @@ def add_patient():
                 gender=request.form.get('gender'),
                 medical_history=request.form.get('medical_history'),
                 medication=request.form.get('medication'),
-                allergies=request.form.getlist('allergies'),
+                allergies=', '.join(request.form.getlist('allergies')),
                 immunization_status=request.form.get('immunization_status'),
                 lab_results=request.form.get('lab_results'),
                 radiology_images=radiology_image_filename,  # Save filename of the uploaded image
@@ -488,4 +522,4 @@ def about():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+   app.run(host='0.0.0.0', port=5000, debug=True)

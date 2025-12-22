@@ -26,3 +26,4 @@ MarkupSafe==2.1.5
 
 # Production Server
 gunicorn==21.2.0
+cryptography>=42.0.0
