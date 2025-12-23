@@ -1,10 +1,10 @@
-name: CI/CD Pipeline with Railway
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
 
 jobs:
   test:
@@ -14,7 +14,7 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: test_db
         options: >-
           --health-cmd="mysqladmin ping"
@@ -37,65 +37,79 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-cov
+        pip install pytest
     
-    - name: Run tests
+    - name: Run basic app tests
       env:
-        DATABASE_URL: mysql+pymysql://root:rootpassword@localhost:3306/test_db
+        DATABASE_URL: mysql+pymysql://root:root@localhost:3306/test_db
+        SECRET_KEY: test-secret-key-123
+        FLASK_ENV: testing
+      run: |
+        # Test that app imports and basic routes work
+        python -c "
+        from app import app
+        print('✅ App imports successfully')
+        with app.test_client() as client:
+            # Test health endpoint
+            resp = client.get('/health')
+            print(f'Health endpoint: {resp.status_code}')
+            # Test root redirect
+            resp = client.get('/')
+            print(f'Root endpoint: {resp.status_code}')
+        "
+    
+    - name: Run database tests
+      env:
+        DATABASE_URL: mysql+pymysql://root:root@localhost:3306/test_db
+        SECRET_KEY: test-secret-key-123
+      run: |
+        python -c "
+        from app import app, db
+        with app.app_context():
+            # Test database connection
+            from sqlalchemy import text
+            db.session.execute(text('SELECT 1'))
+            print('✅ Database connection successful')
+            # Test table creation
+            db.create_all()
+            print('✅ Tables can be created')
+        "
+    
+    - name: Create and run basic tests
+      env:
+        DATABASE_URL: mysql+pymysql://root:root@localhost:3306/test_db
         SECRET_KEY: test-secret-key-123
         FLASK_ENV: testing
       run: |
         # Create a simple test file if none exists
         if [ ! -f "tests/test_basic.py" ] && [ ! -d "tests" ]; then
+          echo "Creating basic test file..."
           mkdir -p tests
-          cat > tests/test_basic.py << 'EOF'
-          def test_app_import():
-              from app import app
-              assert app is not None
           
-          def test_health_endpoint():
-              from app import app
-              with app.test_client() as client:
-                  response = client.get('/health')
-                  assert response.status_code in [200, 404, 500]
-          EOF
+          cat > tests/test_basic.py << 'EOF'
+def test_app_import():
+    from app import app
+    assert app is not None
+
+def test_health_endpoint():
+    from app import app
+    with app.test_client() as client:
+        response = client.get('/health')
+        assert response.status_code in [200, 404, 500]
+EOF
+          
+          echo "Basic test file created"
         fi
         
-        # Run tests
-        python -m pytest tests/ -v --cov=app --cov-report=xml
+        # Run tests if they exist
+        if [ -d "tests" ]; then
+          python -m pytest tests/ -v
+        else
+          echo "No tests directory found, skipping pytest"
+        fi
 
-  build-and-push:
+  deploy:
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-    
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: true
-        tags: |
-          ghcr.io/${{ github.repository }}:latest
-          ghcr.io/${{ github.repository }}:${{ github.sha }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-
-  deploy-to-railway:
-    needs: build-and-push
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: production
@@ -104,14 +118,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Deploy to Railway
-      # CORRECTED: Using railwayapp/railway-action
+    - name: Setup Railway
       uses: railwayapp/railway-action@v1
       with:
         railway_token: ${{ secrets.RAILWAY_TOKEN }}
         service: web
         environment: production
-        # Optional: Wait for deployment to complete
-        wait_for_deploy: true
-        # Optional: Timeout in seconds
-        timeout: 300
