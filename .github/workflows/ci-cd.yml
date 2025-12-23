@@ -45,15 +45,12 @@ jobs:
         SECRET_KEY: test-secret-key-123
         FLASK_ENV: testing
       run: |
-        # Test that app imports and basic routes work
         python -c "
         from app import app
         print('✅ App imports successfully')
         with app.test_client() as client:
-            # Test health endpoint
             resp = client.get('/health')
             print(f'Health endpoint: {resp.status_code}')
-            # Test root redirect
             resp = client.get('/')
             print(f'Root endpoint: {resp.status_code}')
         "
@@ -66,11 +63,9 @@ jobs:
         python -c "
         from app import app, db
         with app.app_context():
-            # Test database connection
             from sqlalchemy import text
             db.session.execute(text('SELECT 1'))
             print('✅ Database connection successful')
-            # Test table creation
             db.create_all()
             print('✅ Tables can be created')
         "
@@ -81,27 +76,19 @@ jobs:
         SECRET_KEY: test-secret-key-123
         FLASK_ENV: testing
       run: |
-        # Create a simple test file if none exists
         if [ ! -f "tests/test_basic.py" ] && [ ! -d "tests" ]; then
-          echo "Creating basic test file..."
           mkdir -p tests
-          
-          cat > tests/test_basic.py << 'EOF'
-def test_app_import():
-    from app import app
-    assert app is not None
-
-def test_health_endpoint():
-    from app import app
-    with app.test_client() as client:
-        response = client.get('/health')
-        assert response.status_code in [200, 404, 500]
-EOF
-          
-          echo "Basic test file created"
+          echo "def test_app_import():" > tests/test_basic.py
+          echo "    from app import app" >> tests/test_basic.py
+          echo "    assert app is not None" >> tests/test_basic.py
+          echo "" >> tests/test_basic.py
+          echo "def test_health_endpoint():" >> tests/test_basic.py
+          echo "    from app import app" >> tests/test_basic.py
+          echo "    with app.test_client() as client:" >> tests/test_basic.py
+          echo "        response = client.get('/health')" >> tests/test_basic.py
+          echo "        assert response.status_code in [200, 404, 500]" >> tests/test_basic.py
         fi
         
-        # Run tests if they exist
         if [ -d "tests" ]; then
           python -m pytest tests/ -v
         else
@@ -112,7 +99,6 @@ EOF
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    environment: production
     
     steps:
     - name: Checkout code
