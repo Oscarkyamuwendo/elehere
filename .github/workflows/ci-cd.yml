@@ -1,83 +1,21 @@
-name: CI/CD Pipeline
+name: Deploy to Railway
 
 on:
   push:
     branches: [main]
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: test_db
-        ports:
-          - 3306:3306
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.12'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    
-    - name: Run basic tests
-      env:
-        DATABASE_URL: mysql+pymysql://root:root@localhost:3306/test_db
-        SECRET_KEY: test-secret-key-123
-      run: |
-        # Simple test to verify app works
-        python -c "
-        try:
-            from app import app
-            print('✅ Flask app imported successfully')
-            
-            # Test if it can start
-            with app.app_context():
-                print('✅ App context works')
-                
-            print('✅ All tests passed!')
-        except Exception as e:
-            print(f'❌ Error: {e}')
-            import traceback
-            traceback.print_exc()
-            exit(1)
-        "
-
   deploy:
-    needs: test
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-    
-    - name: Install Railway CLI
-      run: npm install -g @railway/cli
-    
-    - name: Create railway.json with project ID
-      run: |
-        # Create railway.json file with the project ID
-        echo '{"project": "'${{ secrets.RAILWAY_PROJECT_ID }}'"}' > railway.json
-        echo "✅ Created railway.json with project ID"
-    
-    - name: Deploy to Railway
-      env:
-        RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-      run: |
-        # Deploy using railway.json for project context
-        railway up --service web --detach
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Railway
+        uses: docker://ghcr.io/railwayapp/cli:latest
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        with:
+          # Service name is now 'elehere'
+          args: 'up --project=e6c8c94c-e29d-46bb-8a9b-d1452845618e --service=elehere --detach'
