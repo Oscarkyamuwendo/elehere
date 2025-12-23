@@ -7,12 +7,27 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    container: ghcr.io/railwayapp/cli:latest
-    env:
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-
+    # This approach installs the CLI each time, which is simpler
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Deploy
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: FAIL FAST if token is missing
+        run: |
+          if [ -z "${{ secrets.RAILWAY_TOKEN }}" ]; then
+            echo "::error::RAILWAY_TOKEN secret is EMPTY. Please add it in GitHub Settings > Secrets > Actions."
+            exit 1
+          else
+            echo "RAILWAY_TOKEN secret exists (value is hidden)."
+          fi
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up --service=elehere --detach
