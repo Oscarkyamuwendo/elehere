@@ -7,15 +7,12 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    container: ghcr.io/railwayapp/cli:latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Deploy to Railway
-        run: |
-          # Pull the Railway CLI image and run it with your command
-          docker run --rm \
-            -e RAILWAY_TOKEN="${{ secrets.RAILWAY_TOKEN }}" \
-            ghcr.io/railwayapp/cli:latest \
-            railway up --project=e6c8c94c-e29d-46bb-8a9b-d1452845618e --service=elehere --detach
+      - name: Deploy
+        run: railway up --service=elehere --detach
