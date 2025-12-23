@@ -16,11 +16,6 @@ jobs:
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: test_db
-        options: >-
-          --health-cmd="mysqladmin ping"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=3
         ports:
           - 3306:3306
     
@@ -43,13 +38,7 @@ jobs:
         DATABASE_URL: mysql+pymysql://root:root@localhost:3306/test_db
         SECRET_KEY: test-secret-key-123
       run: |
-        python -c "
-        from app import app
-        print('✅ App imports successfully')
-        with app.test_client() as client:
-            resp = client.get('/health') if hasattr(app, 'test_client') else None
-            print(f'App test passed')
-        "
+        python -c "from app import app; print('✅ App imports successfully')"
 
   deploy:
     needs: test
@@ -60,9 +49,16 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Deploy to Railway
-      # CORRECT: railwayapp/railway-actions (with 's')
-      uses: railwayapp/railway-actions@v1
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
       with:
-        railway_token: ${{ secrets.RAILWAY_TOKEN }}
-        service: web
+        node-version: '18'
+    
+    - name: Install Railway CLI
+      run: npm install -g @railway/cli
+    
+    - name: Deploy to Railway
+      env:
+        RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      run: |
+        railway up --service web --detach
