@@ -9,8 +9,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os
 import urllib.parse as up
+from sqlalchemy import text
 
-
+import time
+import logging
+from sqlalchemy.exc import OperationalError
 import pymysql
 from flask_migrate import Migrate
 import os
@@ -35,37 +38,73 @@ app.config.update(
     MAIL_PASSWORD=os.environ.get('MAIL_PASSWORD', 'Godjesus44me.')
 ) 
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def wait_for_db(max_retries=30, delay=2):
+    """ Waiting for database to be ready before creating tables."""
+    for attempt in range(max_retries):
+        try:
+            # Test connection first
+            with app.app_context():
+                db.session.execute('SELECT 1')
+                logger.info("✓ Database connection established")
+                
+                # Then create tables if they don't exist
+                db.create_all()
+                logger.info("✓ Database tables created/checked")
+            return True
+        except OperationalError as e:
+            logger.warning(f"Attempt {attempt + 1}/{max_retries}: Database not ready - {e}")
+            if attempt < max_retries - 1:
+                time.sleep(delay)
+    logger.error("✗ Could not connect to database after multiple attempts")
+    return False
 
 # Database Configuration
-if os.environ.get('DATABASE_URL'):
-    # Use provided DATABASE_URL (for Railway, Heroku, etc.)
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
-elif os.environ.get('JAWSDB_URL'):
-    # Parse JawsDB URL for Heroku
-    result = up.urlparse(os.environ.get('JAWSDB_URL'))
-    db_user = result.username
-    db_password = result.password
-    db_host = result.hostname
-    db_name = result.path[1:]
-    app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_name}"
-elif os.environ.get('DOCKER_COMPOSE') == 'true' or os.environ.get('FLASK_ENV') == 'development':
-    # Docker Compose development
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://user:password@db:3306/elehere_db'
-elif os.environ.get('CODESPACES') == 'true':
-    # GitHub Codespaces - use SQLite
-    basedir = os.path.abspath(os.path.dirname(__file__))
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'elehere.db')
-else:
-    # Local development fallback
-    basedir = os.path.abspath(os.path.dirname(__file__))
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'elehere.db')
+# Database Configuration - Simple and flexible
+def get_database_uri():
+    """Get database URI from environment with sensible defaults."""
+    # Priority 1: Direct DATABASE_URL (for production)
+    if os.environ.get('DATABASE_URL'):
+        return os.environ.get('DATABASE_URL')
+    
+    # Priority 2: Individual components with defaults for Docker
+    username = os.getenv('MYSQL_USER', 'root')
+    password = os.getenv('MYSQL_PASSWORD', 'password')
+    host = os.getenv('MYSQL_HOST', 'db')
+    port = os.getenv('MYSQL_PORT', '3306')
+    database = os.getenv('MYSQL_DATABASE', 'elehere')
+    
+    return f'mysql+pymysql://{username}:{password}@{host}:{port}/{database}'
 
+# After initializing db, add this:
+def initialize_database():
+    """Initialize database - should only run once."""
+    try:
+        with app.app_context():
+            # Check if any table exists to avoid repeated creation
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            tables = inspector.get_table_names()
+            
+            if not tables:
+                db.create_all()
+                logger.info("✓ Database tables created")
+            else:
+                logger.info("✓ Database tables already exist")
+    except Exception as e:
+        logger.warning(f"⚠ Could not initialize database: {e}")
+
+# Set database URI
+app.config['SQLALCHEMY_DATABASE_URI'] = get_database_uri()
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 
 # Initialize SQLAlchemy
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
+
 
 # Secret key for session management
 app.secret_key = 'your_secret_key'
@@ -73,21 +112,19 @@ app.secret_key = 'your_secret_key'
 
 # Health check endpoint for Docker/load balancers
 @app.route('/health')
-def health_check():
-    """Health check endpoint for Docker/load balancers."""
+def health():
     try:
-        # Try database connection
-        db.session.execute('SELECT 1')
-        db_status = 'connected'
-    except:
-        db_status = 'disconnected'
+        db.session.execute(text('SELECT 1'))
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"disconnected: {e}"
     
-    return {
-        'status': 'healthy',
-        'service': 'elehere',
-        'database': db_status,
-        'timestamp': datetime.now().isoformat()
-    }, 200
+    return jsonify({
+        "status": "healthy",
+        "database": db_status,
+        "service": "elehere",
+        "timestamp": datetime.datetime.utcnow().isoformat()
+    })
 
 @app.route('/ping')
 def ping():
@@ -103,14 +140,14 @@ class Doctor(db.Model):
     confirmed = db.Column(db.Boolean, default=False)
 
 # Creates the MySQL database tables (if they don't exist)
-# Only create tables if we're not using migrations or in development
+"""# Only create tables if we're not using migrations or in development
 if os.environ.get('FLASK_ENV') == 'development' and not os.environ.get('USE_MIGRATIONS'):
     with app.app_context():
         try:
             db.create_all()
             print("✅ Database tables created/checked")
         except Exception as e:
-            print(f"⚠ Could not create tables: {e}")
+            print(f"⚠ Could not create tables: {e}")"""
 
 # Route for the home page
 @app.route('/')
@@ -393,8 +430,13 @@ class Patient(db.Model):
     doctor = db.relationship('Doctor', backref=db.backref('patients', lazy=True))
 
 
-with app.app_context():
-    db.create_all()  # Create tables in the database if they don't exist
+try:
+    with app.app_context():
+        db.create_all()  # Create tables in the database if they don't exist
+        print("✅ Database tables created/checked")
+except Exception as e:
+    print(f"⚠ Could not create tables: {e}")
+    print("App will start without database initialization")
 
 # Configure the upload folder
 UPLOAD_FOLDER = 'static/uploads'
@@ -522,4 +564,13 @@ def about():
 
 
 if __name__ == '__main__':
-   app.run(host='0.0.0.0', port=5000, debug=True)
+    # Wait for database and create tables
+    initialize_database()
+    
+    if wait_for_db():
+        logger.info("✓ Database connection established")
+    else:
+        logger.warning("⚠ Starting app without database connection")
+    
+    # Start the Flask app
+    app.run(host='0.0.0.0', port=5001, debug=True)

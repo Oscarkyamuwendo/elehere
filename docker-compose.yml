@@ -1,20 +1,32 @@
-version: '3.8'
-
 services:
-  web:
-    build: .
-    ports:
-      - "5001:5000"
-    environment:
-      - FLASK_ENV=development
-      - DATABASE_URL=mysql+pymysql://user:password@db:3306/elehere_db
-    depends_on:
-      - db
-
   db:
     image: mysql:8.0
+    container_name: elehere-db
+    restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: elehere_db
-      MYSQL_USER: user
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: elehere
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  web:
+    build: .
+    container_name: elehere-web
+    restart: always
+    ports:
+      - "5001:5001"
+    environment:
+      MYSQL_USER: root
       MYSQL_PASSWORD: password
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: elehere
+      
+      # App settings
+      FLASK_ENV: development
+      FLASK_SECRET_KEY: your-secret-key-change-this
+
+volumes:
+  mysql_data:
