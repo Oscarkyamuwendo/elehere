@@ -1,0 +1,15 @@
+.env
+.git
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+*.sqlite3
+instance/
+.DS_Store
+docker-compose.yml
+docker-compose.prod.yml

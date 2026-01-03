@@ -19,7 +19,13 @@ COPY . .
 RUN useradd -m -u 1000 flaskuser && chown -R flaskuser:flaskuser /app
 USER flaskuser
 
+# Railway uses PORT environment variable
+ENV PORT=5001
 EXPOSE 5001
 
-# Simple command - no wait script
+# Health check for Railway
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:$PORT/health || exit 1
+
+# Simple command - Railway will override PORT if needed
 CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "4", "app:app"]
