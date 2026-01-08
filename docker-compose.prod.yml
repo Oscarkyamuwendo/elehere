@@ -1,12 +1,18 @@
+version: '3.8'
+
 services:
+  db:
+    # ... same as above but with stronger password
+    
   web:
     build: .
-    ports:
-      - "5000:5000"
     environment:
-      - FLASK_ENV=production
-      - SECRET_KEY=${SECRET_KEY}
-      - DATABASE_URL=${DATABASE_URL}
-      - MAIL_USERNAME=${MAIL_USERNAME}
-      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      DATABASE_URL: ${DATABASE_URL}
+      FLASK_ENV: production
+      FLASK_SECRET_KEY: ${SECRET_KEY}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      # Remove FLASK_DEBUG and development settings
+    ports:
+      - "80:5000"  # Map to standard HTTP port
     command: gunicorn --bind 0.0.0.0:5000 --workers 4 app:app
+    # Remove development volumes

@@ -202,54 +202,40 @@ GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
 
 def verify_google_token(token):
     """
-    Verify Google ID token using Google's tokeninfo endpoint
+    Verify Google ID token using Google's public keys
     """
     try:
-        # Verify the token with Google's tokeninfo endpoint
+        # Verify the token with Google's API
         response = requests.get(
-            f'https://oauth2.googleapis.com/tokeninfo?id_token={token}',
-            timeout=10
+            f'https://oauth2.googleapis.com/tokeninfo?id_token={token}'
         )
         
         if response.status_code != 200:
-            print(f"Google token verification failed. Status: {response.status_code}")
-            print(f"Response: {response.text}")
+            print(f"Google token verification failed: {response.text}")
             return None
         
         token_data = response.json()
         
-        # Verify the audience (client ID) matches
+        # Verify the audience (client ID)
         if token_data.get('aud') != GOOGLE_CLIENT_ID:
-            print(f"Token audience mismatch. Expected: {GOOGLE_CLIENT_ID}, Got: {token_data.get('aud')}")
+            print(f"Token audience mismatch: {token_data.get('aud')} != {GOOGLE_CLIENT_ID}")
             return None
         
-        # Check if token has expired
-        import time
+        # Check token expiration
         exp_time = int(token_data.get('exp', 0))
-        current_time = int(time.time())
-        
-        if exp_time < current_time:
-            print(f"Token has expired. Exp: {exp_time}, Current: {current_time}")
+        if exp_time < datetime.utcnow().timestamp():
+            print("Token has expired")
             return None
         
-        # Check if email is verified
-        if token_data.get('email_verified') != 'true':
-            print(f"Email not verified: {token_data.get('email')}")
-            return None
-        
-        print(f"Token verified successfully for: {token_data.get('email')}")
-        
+        # Return the verified token data
         return {
             'sub': token_data.get('sub'),
             'email': token_data.get('email'),
             'name': token_data.get('name', ''),
             'picture': token_data.get('picture', ''),
-            'email_verified': token_data.get('email_verified') == 'true'
+            'email_verified': token_data.get('email_verified', 'false').lower() == 'true'
         }
         
-    except requests.exceptions.RequestException as e:
-        print(f"Network error verifying token: {e}")
-        return None
     except Exception as e:
         print(f"Error verifying Google token: {e}")
         import traceback
@@ -268,6 +254,8 @@ def login():
         if request.get_json() and 'credential' in request.get_json():
             # Handle Google Sign-In callback
             try:
+                print(f"DEBUG: Received credential: {credential[:50]}...")
+                print(f"DEBUG: Starting token verification...")
                 data = request.get_json()
                 credential = data.get('credential')
                 

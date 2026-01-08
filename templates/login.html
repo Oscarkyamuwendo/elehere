@@ -8,6 +8,8 @@
     <link rel="icon" href="/static/assets/img/elehere-log.jpg" type="image/x-icon" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/custom.css">
+    <!-- Load Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         /* Background image styling */
         body {
@@ -36,6 +38,39 @@
 
         .navbar-dark .navbar-nav .nav-link {
             color: #ffffff !important;
+        }
+
+        /* Google Sign-In styling */
+        .google-btn-wrapper {
+            margin: 20px 0;
+            text-align: center;
+            display: flex;
+            justify-content: center;
+        }
+        
+        .divider {
+            display: flex;
+            align-items: center;
+            margin: 20px 0;
+            color: #666;
+        }
+        
+        .divider::before,
+        .divider::after {
+            content: "";
+            flex: 1;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .divider span {
+            padding: 0 10px;
+            font-size: 14px;
+        }
+        
+        /* Ensure Google button container is visible */
+        #g_id_onload, .g_id_signin {
+            display: block !important;
+            visibility: visible !important;
         }
     </style>
 </head>
@@ -86,10 +121,36 @@
                     <a href="forgot_password" class="small">Forgot Password?</a>
                     <button type="submit" class="btn btn-primary">Log in</button>
                 </div>
-                <p class="text-center small mt-2">Don't have an account? <a href="register">Register</a></p>
+                
+                <!-- Divider for Google Sign-In -->
+                <div class="divider">
+                    <span>Or continue with</span>
+                </div>
+                
+                <!-- Google Sign-In Button -->
+                <div class="google-btn-wrapper">
+                    <div id="g_id_onload"
+                         data-client_id="YOUR_GOOGLE_CLIENT_ID_HERE"
+                         data-context="signin"
+                         data-ux_mode="popup"
+                         data-callback="handleCredentialResponse"
+                         data-auto_prompt="false">
+                    </div>
+
+                    <div class="g_id_signin"
+                         data-type="standard"
+                         data-shape="rectangular"
+                         data-theme="outline"
+                         data-text="signin_with"
+                         data-size="large"
+                         data-logo_alignment="left"
+                         data-width="350">
+                    </div>
+                </div>
+                
+                <p class="text-center small mt-3">Don't have an account? <a href="register">Register</a></p>
             </form>
         </div>
-        
     </main>
 
     <!-- Footer -->
@@ -98,5 +159,57 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- JavaScript for handling Google Sign-In -->
+    <!-- In your JavaScript section, update the fetch URL: -->
+<script>
+    function handleCredentialResponse(response) {
+        fetch("{{ url_for('login') }}", {  // Use url_for
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                credential: response.credential
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = data.redirect || "{{ url_for('dashboard') }}";
+            } else {
+                alert("Google Sign-In failed: " + (data.message || "Unknown error"));
+            }
+        })
+        .catch(error => {
+            console.error("Error:", error);
+            alert("An error occurred during Google Sign-In");
+        });
+    }
+    
+    // Initialize Google Sign-In with dynamic client ID
+    window.onload = function() {
+        if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+            google.accounts.id.initialize({
+                client_id: "{{ google_client_id }}",  // Passed from Flask
+                callback: handleCredentialResponse
+            });
+            
+            // Render the button
+            google.accounts.id.renderButton(
+                document.querySelector('.google-btn-wrapper'),
+                {
+                    type: 'standard',
+                    theme: 'outline',
+                    size: 'large',
+                    text: 'signin_with',
+                    shape: 'rectangular',
+                    logo_alignment: 'left',
+                    width: 350
+                }
+            );
+        }
+    };
+</script>
 </body>
 </html>
