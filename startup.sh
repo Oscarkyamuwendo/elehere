@@ -1,23 +1,29 @@
 #!/bin/bash
-# startup.sh
+# start.sh - For local development
 
-# Activate virtual environment if it exists
-if [ -d "venv" ]; then
+echo "Starting Elehere EHR System..."
+echo "Environment: ${FLASK_ENV:-development}"
+
+# Create necessary directories
+mkdir -p static/uploads
+mkdir -p logs
+
+# Install dependencies if needed
+if [ ! -d "venv" ]; then
+    echo "Creating virtual environment..."
+    python -m venv venv
+    source venv/bin/activate
+    pip install --upgrade pip
+    pip install -r requirements.txt
+else
     source venv/bin/activate
 fi
 
-# Install dependencies
-pip install -r requirements.txt
+# Set environment variables for local development
+export FLASK_ENV=development
+export APP_URL=http://localhost:5000
+export DATABASE_URL=mysql+pymysql://root:password@localhost:3307/elehere
 
-# Set up database
-python -c "
-from app import app, db
-with app.app_context():
-    db.create_all()
-    print('Database tables created')
-"
-
-# Run the app
-echo "Starting Flask app on port 5000..."
-echo "Open: https://${CODESPACE_NAME}-5000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
-gunicorn -w 4 -b 0.0.0.0:5000 --reload app:app
+# Run the application
+echo "Starting Flask on http://localhost:5000"
+python app.py

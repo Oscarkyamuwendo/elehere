@@ -25,6 +25,87 @@ import requests
 from datetime import datetime, timedelta
 from functools import wraps
 import json
+import socket
+from urllib.parse import urlparse
+
+def get_base_url():
+    """
+    Smart function to detect the correct base URL for the application
+    Works in: localhost, Docker, Railway, Render, Heroku, etc.
+    """
+    # Priority 1: Explicit environment variable (most reliable)
+    explicit_url = os.environ.get('APP_URL')
+    if explicit_url:
+        return explicit_url.rstrip('/')
+    
+    # Priority 2: Platform-specific environment variables
+    platform_urls = [
+        os.environ.get('RAILWAY_STATIC_URL'),        # Railway
+        os.environ.get('RENDER_EXTERNAL_URL'),       # Render
+        os.environ.get('HEROKU_APP_NAME'),           # Heroku (needs https:// prefix)
+    ]
+    
+    for url in platform_urls:
+        if url:
+            # For Heroku, construct the URL
+            if url == os.environ.get('HEROKU_APP_NAME'):
+                return f"https://{url}.herokuapp.com"
+            return url.rstrip('/')
+    
+    # Priority 3: Check if running in Docker container
+    if os.path.exists('/.dockerenv'):
+        # In Docker, we need to use the service name or external IP
+        docker_host = os.environ.get('DOCKER_HOST_IP', 'localhost')
+        docker_port = os.environ.get('PORT', '5000')
+        return f"http://{docker_host}:{docker_port}"
+    
+    # Priority 4: Try to detect from current request (for runtime)
+    try:
+        if request and request.host_url:
+            # Remove port if it's the standard HTTP/HTTPS port
+            parsed = urlparse(request.host_url)
+            if (parsed.scheme == 'http' and parsed.port == 80) or \
+               (parsed.scheme == 'https' and parsed.port == 443):
+                return f"{parsed.scheme}://{parsed.hostname}".rstrip('/')
+            return request.host_url.rstrip('/')
+    except:
+        pass
+    
+    # Priority 5: Local development fallback
+    return "http://localhost:5000"
+
+def generate_external_url(endpoint, **kwargs):
+    """
+    Generate external URL that works in all environments
+    Usage: generate_external_url('confirm_email', token=token)
+    """
+    base_url = get_base_url()
+    
+    # Map endpoint names to URL paths
+    endpoint_map = {
+        'confirm_email': '/confirm/{token}',
+        'reset_password': '/reset_password/{token}',
+        'login': '/login',
+        'index': '/',
+        'forgot_password': '/forgot_password',
+        'register': '/register',
+        'dashboard': '/dashboard',
+    }
+    
+    if endpoint in endpoint_map:
+        path_template = endpoint_map[endpoint]
+        try:
+            # Format the path with provided kwargs
+            path = path_template.format(**kwargs)
+            return f"{base_url}{path}"
+        except KeyError:
+            # If formatting fails, fall back to url_for
+            from flask import url_for
+            return url_for(endpoint, **kwargs, _external=True)
+    
+    # Fallback to Flask's url_for
+    from flask import url_for
+    return url_for(endpoint, **kwargs, _external=True)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -37,6 +118,33 @@ bcrypt = Bcrypt(app)
 
  # Secret key and email credentials should be environment variables (for security)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'your_default_secret_key')  # Add default for development
+
+# Smart configuration based on environment
+is_production = os.environ.get('FLASK_ENV') == 'production' or os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
+
+if is_production:
+    # Production settings
+    app.config['PREFERRED_URL_SCHEME'] = 'https'
+    app.config['SESSION_COOKIE_SECURE'] = True
+    app.config['REMEMBER_COOKIE_SECURE'] = True
+    print("🚀 Running in PRODUCTION mode")
+else:
+    # Development settings
+    app.config['PREFERRED_URL_SCHEME'] = 'http'
+    print("🔧 Running in DEVELOPMENT mode")
+
+# Add ProxyFix for production behind reverse proxy
+if is_production:
+    from werkzeug.middleware.proxy_fix import ProxyFix  # ADD THIS LINE
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,      # Trust one proxy (Railway/Render)
+        x_proto=1,    # Trust X-Forwarded-Proto header
+        x_host=1,     # Trust X-Forwarded-Host header
+        x_port=1      # Trust X-Forwarded-Port header
+    )
+
+
 app.config.update(
     MAIL_SERVER='smtp.mail.yahoo.com',
     MAIL_PORT=465,
@@ -50,12 +158,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def wait_for_db(max_retries=30, delay=2):
-    """ Waiting for database to be ready before creating tables."""
+    """Wait for database to be ready before creating tables."""
+    from sqlalchemy import text
+    
     for attempt in range(max_retries):
         try:
             # Test connection first
             with app.app_context():
-                db.session.execute('SELECT 1')
+                db.session.execute(text('SELECT 1'))
                 logger.info("✓ Database connection established")
                 
                 # Then create tables if they don't exist
@@ -78,21 +188,31 @@ def get_database_uri():
         return os.environ.get('DATABASE_URL')
     
     # Priority 2: Individual components with defaults for Docker
-    username = os.getenv('MYSQL_USER', 'root')
-    password = os.getenv('MYSQL_PASSWORD', 'password')
-    host = os.getenv('MYSQL_HOST', 'db')
-    port = os.getenv('MYSQL_PORT', '3306')
-    database = os.getenv('MYSQL_DATABASE', 'elehere')
+    if os.path.exists('/.dockerenv'):
+        # Docker environment
+        username = os.getenv('MYSQL_USER', 'root')
+        password = os.getenv('MYSQL_PASSWORD', 'password')
+        host = os.getenv('MYSQL_HOST', 'db')  # 'db' is Docker service name
+        port = os.getenv('MYSQL_PORT', '3306')
+        database = os.getenv('MYSQL_DATABASE', 'elehere')
+    else:
+        # Local development (outside Docker)
+        username = os.getenv('MYSQL_USER', 'root')
+        password = os.getenv('MYSQL_PASSWORD', 'password')
+        host = os.getenv('MYSQL_HOST', 'localhost')  # 'localhost' for local
+        port = os.getenv('MYSQL_PORT', '3307')       # Port 3307 (mapped from Docker)
+        database = os.getenv('MYSQL_DATABASE', 'elehere')
     
     return f'mysql+pymysql://{username}:{password}@{host}:{port}/{database}'
 
 # After initializing db, add this:
 def initialize_database():
     """Initialize database - should only run once."""
+    from sqlalchemy import inspect, text
+    
     try:
         with app.app_context():
             # Check if any table exists to avoid repeated creation
-            from sqlalchemy import inspect
             inspector = inspect(db.engine)
             tables = inspector.get_table_names()
             
@@ -256,26 +376,26 @@ def verify_google_token(token):
         traceback.print_exc()
         return None
 
-# Google Login callback route (API endpoint for your frontend)
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle both traditional and Google Sign-In login"""
     message = None
     
-    # Handle traditional POST login
     if request.method == 'POST':
-        # Check if this is a Google login request (has credential field)
-        if request.get_json() and 'credential' in request.get_json():
-            # Handle Google Sign-In callback
+        # Check content type to determine if it's JSON (Google) or form data
+        content_type = request.headers.get('Content-Type', '')
+        
+        if 'application/json' in content_type:
+            # Handle Google Sign-In callback (JSON)
             try:
                 data = request.get_json()
-                credential = data.get('credential')
-                
-                if not credential:
+                if not data or 'credential' not in data:
                     return jsonify({
                         'success': False,
                         'message': 'No credential provided'
                     }), 400
+                
+                credential = data.get('credential')
                 
                 # Verify the Google token
                 google_data = verify_google_token(credential)
@@ -330,41 +450,45 @@ def login():
                     'message': 'Internal server error'
                 }), 500
         
-        # Handle traditional form login
         else:
+            # Handle traditional form login (form-urlencoded)
             username = request.form.get('username')
             password = request.form.get('password')
             
             if not username or not password:
-                message = "Please enter both username and password."
-            else:
-                doctor = Doctor.query.filter_by(username=username).first()
-                
-                if doctor:
-                    # Check if this is a Google-only user
-                    if doctor.google_id and not doctor.password:
-                        message = "This account uses Google Sign-In. Please use the Google button to login."
-                    elif not doctor.confirmed:
-                        message = "Please confirm your email before logging in."
-                    elif bcrypt.check_password_hash(doctor.password, password):
-                        # Log in traditional user
-                        login_user(doctor, remember=True)
-                        session['loggedin'] = True
-                        session['doctor_id'] = doctor.id
-                        session['username'] = doctor.username
-                        session['is_google_user'] = False
-                        flash('Login successful!', 'success')
-                        return redirect(url_for('dashboard'))
-                    else:
-                        message = "Incorrect password. Please try again."
+                flash('Please enter both username and password.', 'danger')
+                return redirect(url_for('login'))
+            
+            doctor = Doctor.query.filter_by(username=username).first()
+            
+            if doctor:
+                # Check if this is a Google-only user
+                if doctor.google_id and not doctor.password:
+                    flash('This account uses Google Sign-In. Please use the Google button to login.', 'danger')
+                    return redirect(url_for('login'))
+                elif not doctor.confirmed:
+                    flash('Please confirm your email before logging in.', 'danger')
+                    return redirect(url_for('login'))
+                elif bcrypt.check_password_hash(doctor.password, password):
+                    # Log in traditional user
+                    login_user(doctor, remember=True)
+                    session['loggedin'] = True
+                    session['doctor_id'] = doctor.id
+                    session['username'] = doctor.username
+                    session['is_google_user'] = False
+                    flash('Login successful!', 'success')
+                    return redirect(url_for('dashboard'))
                 else:
-                    message = "No account found with this username. Please register first."
+                    flash('Incorrect password. Please try again.', 'danger')
+                    return redirect(url_for('login'))
+            else:
+                flash('No account found with this username. Please register first.', 'danger')
+                return redirect(url_for('login'))
 
-    # For GET requests or failed POST, render the login page
+    # For GET requests, render the login page
     return render_template('login.html', 
                           message=message,
                           google_client_id=GOOGLE_CLIENT_ID)
-
 
 # Health check with user info
 @app.route('/health')
@@ -572,7 +696,7 @@ def register():
             
             # Generate confirmation token and send email
             token = serializer.dumps(email, salt='email-confirmation-salt')
-            confirm_url = url_for('confirm_email', token=token, _external=True)
+            confirm_url = generate_external_url('confirm_email', token=token)
             
             msg = Message(
                 'Confirm Your Account - ELEHERE EHR System',
@@ -707,7 +831,7 @@ def confirm_email(token):
                              message="""Your account has been activated successfully! 
                              <br><br>
                              <strong>You can now log in to access your dashboard.</strong>""",
-                             login_url=url_for('login'),
+                             login_url = generate_external_url('login'),
                              username=doctor.username)
         
     except Exception as e:
@@ -752,7 +876,7 @@ def send_welcome_email(email, username):
                     
                     <p><strong>Need help getting started?</strong></p>
                     <ul>
-                        <li><a href="{url_for('about', _external=True)}">View our tutorial</a></li>
+                        <li><a href="{generate_external_url('about')}">View our tutorial</a></li>
                         <li>Contact support: oscarkyamuwendo@yahoo.com</li>
                     </ul>
                     
@@ -1015,6 +1139,30 @@ def about():
 
     return render_template('about.html')
 
+@app.route('/env-info')
+def env_info():
+    """Debug endpoint to see environment information"""
+    import socket
+    
+    info = {
+        "environment": {
+            "in_docker": os.path.exists('/.dockerenv'),
+            "flask_env": os.environ.get('FLASK_ENV'),
+            "app_url": os.environ.get('APP_URL'),
+            "port": os.environ.get('PORT'),
+            "database_url": os.environ.get('DATABASE_URL'),
+        },
+        "network": {
+            "hostname": socket.gethostname(),
+            "internal_port": app.config.get('PORT', 5001),
+            "external_access": "http://localhost:5000"
+        },
+        "url_examples": {
+            "confirm_email_example": f"{os.environ.get('APP_URL', 'http://localhost:5000')}/confirm/test-token-123",
+            "reset_password_example": f"{os.environ.get('APP_URL', 'http://localhost:5000')}/reset_password/test-token-456",
+        }
+    }
+    return jsonify(info)
 
 if __name__ == '__main__':
     # Wait for database and create tables
@@ -1025,5 +1173,8 @@ if __name__ == '__main__':
     else:
         logger.warning("⚠ Starting app without database connection")
     
+    # Get port from environment variable (Railway/Docker will set this)
+    port = int(os.environ.get('PORT', 5001))
+    
     # Start the Flask app
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    app.run(host='0.0.0.0', port=port, debug=False)  # debug=False for production

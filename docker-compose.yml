@@ -1,3 +1,4 @@
+
 services:
   db:
     image: mysql:8.0
@@ -16,39 +17,69 @@ services:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       timeout: 20s
       retries: 10
+    networks:
+      - elehere-network
 
   web:
     build: .
     container_name: elehere-web
     restart: always
     ports:
-      - "5000:5001"
+      - "5000:5001"  # External:Internal
     environment:
-      # Use root user for database connection
+      # Database connection
       DATABASE_URL: mysql+pymysql://root:password@db:3306/elehere
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: elehere
       
       # Flask settings
-      FLASK_ENV: development
+      FLASK_ENV: production  # Changed from development
       FLASK_APP: app.py
       FLASK_SECRET_KEY: your-secret-key-change-this-in-production
-      FLASK_DEBUG: 1
+      
+      # URL Configuration
+      APP_URL: http://localhost:5000  # For email links
+      PORT: 5001                      # Internal port
+      SERVER_NAME: localhost:5000
       
       # Google OAuth
       GOOGLE_CLIENT_ID: 1073468506034-kaeghsgjs1ni2dku3s7bnq3qfc1oqcsc.apps.googleusercontent.com
-      SECRET_KEY: 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
+      GOOGLE_CLIENT_SECRET: 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
       
       # Email settings
       MAIL_USERNAME: oscarkyamuwendo@yahoo.com
       MAIL_PASSWORD: vdvifzmtxjyigmse
+      
+      # Production settings
+      PYTHONUNBUFFERED: 1
+      GUNICORN_CMD_ARGS: "--access-logfile - --error-logfile -"
+    
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      - .:/app
     
-    env_file:
-      - .env  
+    volumes:
+      # Mount only necessary directories
+      - ./static/uploads:/app/static/uploads:rw  # Read-write for uploads
+      - ./logs:/app/logs:rw                      # Log directory
+      # Don't mount the entire code directory in production
+    
+    networks:
+      - elehere-network
+    
+    # Remove this for production (use environment variables above)
+    # env_file:
+    #   - .env
 
-# ADD THIS SECTION AT THE BOTTOM:
+# Networks
+networks:
+  elehere-network:
+    driver: bridge
+
+# Volumes
 volumes:
   mysql_data:
+    driver: local

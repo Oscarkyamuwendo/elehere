@@ -15,6 +15,9 @@ RUN pip install --upgrade pip && pip install -r requirements.txt gunicorn authli
 # Copy everything else
 COPY . .
 
+# Create uploads directory
+RUN mkdir -p static/uploads && chmod -R 755 static/uploads
+
 # Run as non-root user
 RUN useradd -m -u 1000 flaskuser && chown -R flaskuser:flaskuser /app
 USER flaskuser
@@ -23,9 +26,9 @@ USER flaskuser
 ENV PORT=5001
 EXPOSE 5001
 
-# Health check for Railway
+# Health check for Railway - FIXED: Use hardcoded port in health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:$PORT/health || exit 1
+    CMD curl -f http://localhost:5001/health || exit 1
 
 # Simple command - Railway will override PORT if needed
 CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "4", "app:app"]

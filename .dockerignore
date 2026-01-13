@@ -1,25 +1,46 @@
-.env
-.venv
-venv/
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
-*.so
-*.egg
-*.egg-info
-dist/
-build/
+env/
+venv/
+.venv/
+env.bak/
+venv.bak/
+
+# Testing
+.pytest_cache/
 .coverage
 htmlcov/
-.pytest_cache/
-.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
-.git/
-.gitignore
-README.md
-docker-compose.yml
-Dockerfile
+Thumbs.db
+
+# Logs
+logs/
 *.log
-instance/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Uploads
+static/uploads/*
+!static/uploads/.keep  # Keep empty .keep file if needed
