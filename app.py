@@ -357,74 +357,47 @@ def verify_google_token(token):
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """Handle traditional and Google Sign-In login"""
     if request.method == 'POST':
         content_type = request.headers.get('Content-Type', '')
 
-        if 'application/json' in content_type:
-            # Google Sign-In JSON
-            data = request.get_json()
-            if not data or 'credential' not in data:
-                return jsonify({'success': False, 'message': 'No credential provided'}), 400
+        # ---- GOOGLE SIGN-IN JSON ----
+        if content_type.startswith('application/json'):
+            try:
+                data = request.get_json()
+                if not data or 'credential' not in data:
+                    return jsonify({'success': False, 'message': 'No credential provided'}), 400
 
-            credential = data['credential']
-            
-            # Verify Google token
-            google_data = verify_google_token(credential)
-            if not google_data:
-                return jsonify({'success': False, 'message': 'Invalid or expired Google token'}), 401
+                credential = data['credential']
+                google_data = verify_google_token(credential)
 
-            # Find or create doctor
-            doctor = Doctor.get_or_create_google_user(google_data)
+                if not google_data:
+                    return jsonify({'success': False, 'message': 'Invalid Google token'}), 401
 
-            # Log in with Flask-Login
-            login_user(doctor, remember=True)
+                doctor = Doctor.get_or_create_google_user(google_data)
 
-            # Set session flags
-            session['loggedin'] = True
-            session['doctor_id'] = doctor.id
-            session['username'] = doctor.username
-            session['is_google_user'] = True
+                login_user(doctor, remember=True)
+                session['loggedin'] = True
+                session['doctor_id'] = doctor.id
+                session['username'] = doctor.username
+                session['is_google_user'] = True
 
-            # Return JSON redirect URL (client-side JS will handle navigation)
-            return jsonify({
-                'success': True,
-                'redirect': url_for('dashboard', _external=True),
-                'user': {
-                    'name': doctor.username,
-                    'email': doctor.email
-                }
-            })
+                return jsonify({
+                    'success': True,
+                    'redirect': url_for('dashboard', _external=True)
+                })
 
+            except Exception as e:
+                print("GOOGLE LOGIN ERROR:", repr(e))
+                return jsonify({
+                    'success': False,
+                    'message': 'Server error during Google login',
+                    'error': str(e)
+                }), 500
+
+        # ---- NORMAL FORM LOGIN ----
         else:
-            # Traditional form login
-            username = request.form.get('username')
-            password = request.form.get('password')
+            ...
 
-            if not username or not password:
-                return render_template('login.html', message='Please enter both username and password.')
-
-            doctor = Doctor.query.filter_by(username=username).first()
-            if not doctor:
-                return render_template('login.html', message='No account found with this username.')
-
-            if doctor.google_id and not doctor.password:
-                return render_template('login.html', message='This account uses Google Sign-In.')
-
-            if not bcrypt.check_password_hash(doctor.password, password):
-                return render_template('login.html', message='Incorrect password.')
-
-            # Log in regular user
-            login_user(doctor)
-            session['loggedin'] = True
-            session['doctor_id'] = doctor.id
-            session['username'] = doctor.username
-            session['is_google_user'] = False
-
-            return redirect(url_for('dashboard'))
-
-    # GET request: render login page
-    return render_template('login.html', google_client_id=GOOGLE_CLIENT_ID)
 
 
 # Health check with user info
@@ -1100,6 +1073,13 @@ def env_info():
         }
     }
     return jsonify(info)
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        if request.headers.get('Content-Type') == 'application/json':
+            return jsonify({'success': False, 'message': 'Internal server error'}), 500
+        return error
+
     
 
 if __name__ == '__main__':

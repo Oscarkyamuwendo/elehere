@@ -164,22 +164,29 @@
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script>
     function handleCredentialResponse(response) {
-        fetch('/login', {
+                fetch('/login', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ credential: response.credential })
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({credential: response.credential})
         })
-        .then(res => res.json())
+        .then(res => {
+            const ct = res.headers.get("content-type");
+            if (ct && ct.includes("application/json")) {
+                return res.json();
+            }
+            throw new Error("Server returned non-JSON response");
+        })
         .then(data => {
-            if(data.success) {
+            if (data.success) {
                 window.location.href = data.redirect;
             } else {
                 alert(data.message);
             }
         })
-        .catch(err => alert("Login failed. " + err));
+        .catch(err => {
+            alert("Login failed: " + err.message);
+        });
+
     }
 
     window.onload = function () {
