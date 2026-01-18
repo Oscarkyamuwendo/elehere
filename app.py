@@ -184,8 +184,14 @@ def wait_for_db(max_retries=30, delay=2):
 def get_database_uri():
     """Get database URI from environment with sensible defaults."""
     # Priority 1: Direct DATABASE_URL (for production)
-    if os.environ.get('DATABASE_URL'):
-        return os.environ.get('DATABASE_URL')
+    if os.environ.get("MYSQLHOST"):
+        user = os.environ.get("MYSQLUSER")
+        password = os.environ.get("MYSQLPASSWORD")
+        host = os.environ.get("MYSQLHOST")
+        port = os.environ.get("MYSQLPORT", "3306")
+        db = os.environ.get("MYSQLDATABASE")
+
+        return f"mysql+pymysql://{user}:{password}@{host}:{port}/{db}"
     
     # Priority 2: Individual components with defaults for Docker
     if os.path.exists('/.dockerenv'):
@@ -233,9 +239,6 @@ db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
 
-# Secret key for session management
-app.secret_key = 'your_secret_key'
-
 # Initialize Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -267,7 +270,6 @@ class Doctor(db.Model, UserMixin):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime, default=datetime.utcnow)
     confirmed_at = db.Column(db.DateTime, nullable=True)  # Add this
-    google_id = db.Column(db.String(100), unique=True, nullable=True)
     
     @staticmethod
     def get_or_create_google_user(google_data):
