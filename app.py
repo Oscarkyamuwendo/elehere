@@ -183,10 +183,8 @@ def wait_for_db(max_retries=30, delay=2):
 # Database Configuration
 # Database Configuration - Simple and flexible
 def get_database_uri():
-    """
-    Correct database resolver for Local, Docker, Railway.
-    Railway MUST use DATABASE_URL.
-    """
+    """Get database URI from environment with sensible defaults."""
+    
     # Railway / Production
     if os.getenv("DATABASE_URL"):
         uri = os.getenv("DATABASE_URL")
@@ -200,17 +198,16 @@ def get_database_uri():
         host = os.getenv('MYSQL_HOST', 'db')
         port = os.getenv('MYSQL_PORT', '3306')
         database = os.getenv('MYSQL_DATABASE', 'elehere')
-        print("🐳 Using Docker MySQL:", host)
         return f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
 
     # Local
     username = os.getenv('MYSQL_USER', 'root')
     password = os.getenv('MYSQL_PASSWORD', 'password')
     host = os.getenv('MYSQL_HOST', 'localhost')
-    port = os.getenv('MYSQL_PORT', '3307')
+    port = os.getenv('MYSQL_PORT', '3306')
     database = os.getenv('MYSQL_DATABASE', 'elehere')
-    print("💻 Using Local MySQL:", host)
     return f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
+
 
 
 # After initializing db, add this:
@@ -245,6 +242,10 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
 # Initialize SQLAlchemy
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
+
+with app.app_context():
+    db.create_all()
+
 
 
 
@@ -310,15 +311,7 @@ class Doctor(db.Model, UserMixin):
         doctor.last_login = datetime.utcnow()
         db.session.commit()
         return doctor
-# Creates the MySQL database tables (if they don't exist)
-"""# Only create tables if we're not using migrations or in development
-if os.environ.get('FLASK_ENV') == 'development' and not os.environ.get('USE_MIGRATIONS'):
-    with app.app_context():
-        try:
-            db.create_all()
-            print("✅ Database tables created/checked")
-        except Exception as e:
-            print(f"⚠ Could not create tables: {e}")"""
+
 
 # Route for the home page
 @app.route('/')
@@ -855,55 +848,28 @@ def view_doctors():
 
 # Route for doctor dashboard after login
 @app.route('/dashboard', methods=['GET', 'POST'])
+@login_required
 def dashboard():
-    doctor_id = current_user.id if current_user.is_authenticated else session.get('doctor_id')
-    if 'loggedin' in session:
-        # Get search parameters from request args
-        name_query = request.args.get('name')
-        age_query = request.args.get('age')
+    doctor_id = current_user.id
 
-        # Start with a query filtering by doctor_id
-        query = Patient.query.filter_by(doctor_id=session['doctor_id'])
+    name_query = request.args.get('name')
+    age_query = request.args.get('age')
 
-        # Apply filters based on search criteria
-        if name_query:
-            query = query.filter(Patient.name.ilike(f"%{name_query}%"))  # Case-insensitive search
-        if age_query:
-            query = query.filter(Patient.age == age_query)
+    query = Patient.query.filter_by(doctor_id=doctor_id)
 
-        # Execute the query
-        patients = query.all()
-        
-        return render_template('dashboard.html', patients=patients)
+    if name_query:
+        query = query.filter(Patient.name.ilike(f"%{name_query}%"))
+    if age_query:
+        query = query.filter(Patient.age == age_query)
 
-        if not doctor_id:
-            flash('Please log in to access the dashboard.', 'danger')
-            return redirect(url_for('login'))
-        
-        # Get search parameters from request args
-        name_query = request.args.get('name')
-        age_query = request.args.get('age')
+    patients = query.all()
 
-        # Start with a query filtering by doctor_id
-        query = Patient.query.filter_by(doctor_id=doctor_id)
+    return render_template(
+        'dashboard.html',
+        patients=patients,
+        current_user=current_user
+    )
 
-        # Apply filters based on search criteria
-        if name_query:
-            query = query.filter(Patient.name.ilike(f"%{name_query}%"))
-        if age_query:
-            query = query.filter(Patient.age == age_query)
-
-        # Execute the query
-        patients = query.all()
-        
-        return render_template('dashboard.html', 
-                            patients=patients,
-                            current_user=current_user)
-    
-    
-    else:
-        flash('Please log in to access the dashboard.', 'danger')
-        return redirect(url_for('login'))
 
 
 # Logout
