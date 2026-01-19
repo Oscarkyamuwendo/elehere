@@ -183,41 +183,35 @@ def wait_for_db(max_retries=30, delay=2):
 # Database Configuration
 # Database Configuration - Simple and flexible
 def get_database_uri():
-    """Get database URI from environment with sensible defaults."""
-    # Priority 1: Direct DATABASE_URL (for production)
-
+    """
+    Correct database resolver for Local, Docker, Railway.
+    Railway MUST use DATABASE_URL.
+    """
+    # Railway / Production
     if os.getenv("DATABASE_URL"):
-        app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
-    else:
-        MYSQL_HOST = os.getenv("MYSQLHOST")
-        MYSQL_USER = os.getenv("MYSQLUSER")
-        MYSQL_PASSWORD = os.getenv("MYSQLPASSWORD")
-        MYSQL_DB = os.getenv("MYSQLDATABASE")
-        MYSQL_PORT = os.getenv("MYSQLPORT", "3306")
+        uri = os.getenv("DATABASE_URL")
+        print("✅ Using Railway DATABASE_URL")
+        return uri
 
-        app.config["SQLALCHEMY_DATABASE_URI"] = (
-            f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}"
-            f"@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
-        )
-
-    
-    # Priority 2: Individual components with defaults for Docker
+    # Docker
     if os.path.exists('/.dockerenv'):
-        # Docker environment
         username = os.getenv('MYSQL_USER', 'root')
         password = os.getenv('MYSQL_PASSWORD', 'password')
-        host = os.getenv('MYSQL_HOST', 'db')  # 'db' is Docker service name
+        host = os.getenv('MYSQL_HOST', 'db')
         port = os.getenv('MYSQL_PORT', '3306')
         database = os.getenv('MYSQL_DATABASE', 'elehere')
-    else:
-        # Local development (outside Docker)
-        username = os.getenv('MYSQL_USER', 'root')
-        password = os.getenv('MYSQL_PASSWORD', 'password')
-        host = os.getenv('MYSQL_HOST', 'localhost')  # 'localhost' for local
-        port = os.getenv('MYSQL_PORT', '3307')       # Port 3307 (mapped from Docker)
-        database = os.getenv('MYSQL_DATABASE', 'elehere')
-    
-    return f'mysql+pymysql://{username}:{password}@{host}:{port}/{database}'
+        print("🐳 Using Docker MySQL:", host)
+        return f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
+
+    # Local
+    username = os.getenv('MYSQL_USER', 'root')
+    password = os.getenv('MYSQL_PASSWORD', 'password')
+    host = os.getenv('MYSQL_HOST', 'localhost')
+    port = os.getenv('MYSQL_PORT', '3307')
+    database = os.getenv('MYSQL_DATABASE', 'elehere')
+    print("💻 Using Local MySQL:", host)
+    return f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
+
 
 # After initializing db, add this:
 def initialize_database():
@@ -242,9 +236,16 @@ def initialize_database():
 app.config['SQLALCHEMY_DATABASE_URI'] = get_database_uri()
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# ADD THIS
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True,
+    "pool_recycle": 280
+}
+
 # Initialize SQLAlchemy
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
+
 
 
 # Initialize Flask-Login
@@ -941,23 +942,6 @@ class Patient(db.Model):
     last_visit_date = db.Column(db.Date, nullable=True)
 
     doctor = db.relationship('Doctor', backref=db.backref('patients', lazy=True))
-
-
-try:
-    with app.app_context():
-         # Check if columns exist
-        from sqlalchemy import inspect
-        inspector = inspect(db.engine)
-        columns = [col['name'] for col in inspector.get_columns('doctor')]
-        
-        if 'google_id' not in columns:
-            print("Adding Google login columns...")
-      
-        db.create_all()  # Create tables in the database if they don't exist
-        print("✅ Database tables created/checked")
-except Exception as e:
-    print(f"⚠ Could not create tables: {e}")
-    print("App will start without database initialization")
 
 # Configure the upload folder
 UPLOAD_FOLDER = 'static/uploads'
