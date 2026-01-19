@@ -185,14 +185,21 @@ def wait_for_db(max_retries=30, delay=2):
 def get_database_uri():
     """Get database URI from environment with sensible defaults."""
     # Priority 1: Direct DATABASE_URL (for production)
-    if os.environ.get("MYSQLHOST"):
-        user = os.environ.get("MYSQLUSER")
-        password = os.environ.get("MYSQLPASSWORD")
-        host = os.environ.get("MYSQLHOST")
-        port = os.environ.get("MYSQLPORT", "3306")
-        db = os.environ.get("MYSQLDATABASE")
 
-        return f"mysql+pymysql://{user}:{password}@{host}:{port}/{db}"
+    if os.getenv("DATABASE_URL"):
+        app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
+    else:
+        MYSQL_HOST = os.getenv("MYSQLHOST")
+        MYSQL_USER = os.getenv("MYSQLUSER")
+        MYSQL_PASSWORD = os.getenv("MYSQLPASSWORD")
+        MYSQL_DB = os.getenv("MYSQLDATABASE")
+        MYSQL_PORT = os.getenv("MYSQLPORT", "3306")
+
+        app.config["SQLALCHEMY_DATABASE_URI"] = (
+            f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}"
+            f"@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
+        )
+
     
     # Priority 2: Individual components with defaults for Docker
     if os.path.exists('/.dockerenv'):
